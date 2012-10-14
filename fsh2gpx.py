@@ -25,7 +25,7 @@ from elementtree.SimpleXMLWriter import XMLWriter
 
 class Waypoint:
     def __init__(self):
-        self.time = 0 
+        self.time = 0
         self.name = ""
         self.lat = 0.0
         self.lon = 0.0
@@ -79,11 +79,6 @@ def getAsUInt():
     result, = struct.unpack("<I", getBytes(4))
     return result
 
-def getAsLong():
-    global pos
-    result, = struct.unpack("<q", getBytes(8))
-    return result
-
 def getAsULong():
     global pos
     result, = struct.unpack("<Q", getBytes(8))
@@ -106,36 +101,24 @@ def getZeroes(len):
         if val:
             print "ERROR - expecting 0, got %s at %d - %s" % (hex(val), (pos-1), hex(pos-1))
 
-def getString():
-    nameLen=getAsShort()
-    getZeroes(4)
-    name=getBytes(nameLen)
-    return nameLen, name
-
 def readRL90hdr():
     # RL90 header
     rl90hdr = getBytes(len(RL90_HEADER))
     print rl90hdr
     getZeroes(1)
-    getAsByte() # 0x10
-    getZeroes(5)
-    getAsByte() # 0x01
-    getZeroes(1)
-    getAsByte() # 0x01
-    getZeroes(1)
-    getAsByte() # 0x01
-    getZeroes(1)
+    getAsShort() # 0x10
+    getZeroes(4)
+    getAsShort() # 0x01
+    getAsShort() # 0x01
+    getAsShort() # 0x01
 
 def readFLOBhdr():
     # FLOB header
     flobhdr = getBytes(len(FLOB_HEADER))
     print flobhdr
-    getAsByte() # 0x01
-    getZeroes(1)
-    getAsByte() # 0x01
-    getZeroes(1)
-    print hex(getAsByte()) # 0xfc
-    print hex(getAsByte()) # 0xff
+    getAsShort() # 0x01
+    getAsShort() # 0x01
+    getAsUShort() # 0xfc ff
 
 def readGUID():
     guid4=getAsUShort()
@@ -149,7 +132,7 @@ def readBlockHeader():
     guid = readGUID()
     type = getAsUShort()
     unknown = getAsUShort()
-    return (size, guid, type, unknown)
+    return size, guid, type, unknown
 
 def readCoord():
     return float(getAsInt())/1E7
@@ -162,7 +145,14 @@ def printAsUShort():
     val=getAsUShort()
     print "Unknown short %s (%d)" % (hex(val), val)
 
-def readFooter():
+def readWaypoint():
+    global w
+    lat = readCoord()
+    lon = readCoord()
+    timestamp = readTime()
+    print "LAT: %f" % lat
+    print "LON: %f" % lon
+    print time.ctime(timestamp)
     getZeroes(12) # Maybe 4 ints?
     val=getAsByte()
     print hex(val) # 06 or 02 (symbol?)
@@ -172,19 +162,10 @@ def readFooter():
     printAsUShort()
     printAsUShort()
     printAsUShort()
-
     getZeroes(1)
-
-def readWaypoint():
-    global w
-    lat = readCoord()
-    lon = readCoord()
-    timestamp = readTime()
-    print "LAT: %f" % lat
-    print "LON: %f" % lon
-    print time.ctime(timestamp)
-    readFooter()
-    (namelen, name) = getString()
+    namelen=getAsShort()
+    getZeroes(4)
+    name=getBytes(namelen)
     print "NAME: %d [%s]" % (namelen, name)
     waypoint = Waypoint()
     waypoint.name=name
@@ -226,7 +207,7 @@ def readRoute(type):
         print "Looping %d waypoints" % guidcount
         for i in range(0, guidcount):
             route.waypoints.append(readRouteWaypoint())
- 
+
     if type == 0x21:
         print time.ctime(readTime())
         print time.ctime(readTime())
@@ -239,12 +220,12 @@ def readRoute(type):
         # It has no size, and the length is not an even interval of the
         # number of waypoints. The only marker is that the 'weird' int
         # value shows up again at the end in the case that it's non-zero.
-        if (weird > 0):
+        if weird > 0:
             getBytes(4) # Sometimes, the weird value is in there twice
             while True:
                 check=getAsUInt()
-                if (check == weird):
-                    break;
+                if check == weird:
+                    break
                 rewind(2) # Not always a 4 byte boundary
         print "pos at %s" % hex(pos)
         guidcount=getAsShort()
@@ -282,7 +263,7 @@ def writeRoute(rte):
         writeWaypoint(wpt)
     w.end()
 
-if (len(sys.argv) !=3 ):
+if len(sys.argv) !=3:
     print "Usage: python %s <FSHinput> <GPXoutput>" % sys.argv[0]
     sys.exit(1)
 
@@ -334,7 +315,7 @@ while not done and pos < len(data):
         print "Skipping unknown type %s" % hex(type)
 
     # Pad byte, usually 0xcd
-    if (pos % 2 != 0):
+    if pos % 2 != 0:
         getAsByte()
 
     print "==="
