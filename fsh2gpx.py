@@ -1,7 +1,8 @@
 import struct
 import time
 import sys
-from elementtree.SimpleXMLWriter import XMLWriter
+import xml.etree.ElementTree as ET
+from xml.dom import minidom
 
 #    Python script for converting Raymarine FSH files to
 #    OpenCPN compatible GPX files
@@ -39,6 +40,11 @@ class Route:
 
 RL90_HEADER="RL90 FLASH FILE"
 FLOB_HEADER="RAYFLOB1"
+DEBUG = False
+
+def debug(msg):
+    if DEBUG == True:
+        print msg
 
 def rewind(len):
     global pos
@@ -104,7 +110,7 @@ def getZeroes(len):
 def readRL90hdr():
     # RL90 header
     rl90hdr = getBytes(len(RL90_HEADER))
-    print rl90hdr
+    debug(rl90hdr)
     getZeroes(1)
     getAsShort() # 0x10
     getZeroes(4)
@@ -115,7 +121,7 @@ def readRL90hdr():
 def readFLOBhdr():
     # FLOB header
     flobhdr = getBytes(len(FLOB_HEADER))
-    print flobhdr
+    debug(flobhdr)
     getAsShort() # 0x01
     getAsShort() # 0x01
     getAsUShort() # 0xfc ff
@@ -143,30 +149,27 @@ def readTime():
 
 def printAsUShort():
     val=getAsUShort()
-    print "Unknown short %s (%d)" % (hex(val), val)
+    debug("Unknown short %s (%d)" % (hex(val), val))
 
 def readWaypoint():
-    global w
     lat = readCoord()
     lon = readCoord()
     timestamp = readTime()
-    print "LAT: %f" % lat
-    print "LON: %f" % lon
-    print time.ctime(timestamp)
+    debug("LAT: %f" % lat)
+    debug("LON: %f" % lon)
+    debug(time.ctime(timestamp))
     getZeroes(12) # Maybe 4 ints?
-    val=getAsByte()
-    print hex(val) # 06 or 02 (symbol?)
-    printAsUShort()
-    printAsUShort()
-    printAsUShort()
-    printAsUShort()
-    printAsUShort()
-    printAsUShort()
+    symbol = getAsByte() # 06 or 02 - maybe symbol
+    temp = getAsUShort()
+    depth = getAsUInt()
+    timest = getAsUInt()
+    datest = getAsUShort()
     getZeroes(1)
     namelen=getAsShort()
     getZeroes(4)
     name=getBytes(namelen)
-    print "NAME: %d [%s]" % (namelen, name)
+    debug("NAME: %d [%s]" % (namelen, name))
+    print("WAYPOINT: %s" % name)
     waypoint = Waypoint()
     waypoint.name=name
     waypoint.time=timestamp
@@ -174,7 +177,7 @@ def readWaypoint():
     waypoint.lon=lon
     waypoint.sym="circle"
     waypoint.type="wpt"
-    print "---"
+    debug("---")
     return waypoint
 
 def readRouteWaypoint():
@@ -193,27 +196,27 @@ def readRoute(type):
     guidcount=getAsShort()
 
     if type == 0x21:
-        printAsUShort()
+        debug(printAsUShort())
 
     name=getBytes(namecount)
-    print "NAME: %s" % name
+    print "ROUTE: %s" % name
     route.name=name
 
-    print "Looping %d GUIDs" % guidcount
+    debug("Looping %d GUIDs" % guidcount)
     for i in range(0, guidcount):
-        print "GUID: %s" % readGUID()
+        debug("GUID: %s" % readGUID())
 
     if type == 0x22:
-        print "Looping %d waypoints" % guidcount
+        debug("Looping %d waypoints" % guidcount)
         for i in range(0, guidcount):
             route.waypoints.append(readRouteWaypoint())
 
     if type == 0x21:
-        print time.ctime(readTime())
-        print time.ctime(readTime())
-        print "pos at %s" % hex(pos)
+        debug(time.ctime(readTime()))
+        debug(time.ctime(readTime()))
+        debug("pos at %s" % hex(pos))
         weird=getAsUInt()
-        print "Weird is %s (%d)" % (hex(weird), weird)
+        debug("Weird is %s (%d)" % (hex(weird), weird))
         getBytes(26) # What is this? the 0xcc crap
         getZeroes(10)
         # This is a variable length block that I haven't figured out.
@@ -227,41 +230,58 @@ def readRoute(type):
                 if check == weird:
                     break
                 rewind(2) # Not always a 4 byte boundary
-        print "pos at %s" % hex(pos)
+        debug("pos at %s" % hex(pos))
         guidcount=getAsShort()
         getZeroes(2)
-        print "GUID COUNT %d" % guidcount
-        print "Looping %d GUIDs+waypoints" % guidcount
+        debug("GUID COUNT %d" % guidcount)
+        debug("Looping %d GUIDs+waypoints" % guidcount)
         for i in range(0, guidcount):
-            print "GUID: %s" % readGUID()
+            debug("GUID: %s" % readGUID())
             route.waypoints.append(readRouteWaypoint())
 
-    print "---"
+    debug("---")
     return route
 
-def writeWaypoint(wpt):
-    global w
-    w.start(wpt.type, lat=str(wpt.lat), lon=str(wpt.lon))
-    w.element("time", time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime(wpt.time)))
-    w.element("name", wpt.name)
-    w.element("sym", wpt.sym)
-    w.element("type", "WPT")
-    w.start("extensions")
-    w.element("opencpn:viz", "1")
-    w.element("opencpn:viz_name", "1")
-    w.end()
-    w.end()
+def writeWaypoint(wpt, parent):
+    attrs={}
+    attrs["lat"]=str(wpt.lat)
+    attrs["lon"]=str(wpt.lon)
+    pt = ET.Element(wpt.type, attrib=attrs)
+    ts = ET.Element("time")
+    ts.text = time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime(wpt.time))
+    pt.append(ts)
+    name = ET.Element("name")
+    name.text = wpt.name
+    pt.append(name)
+    sym = ET.Element("sym")
+    sym.text = wpt.sym
+    pt.append(sym)
+    ty = ET.Element("type")
+    ty.text = "WPT"
+    pt.append(ty)
+    ext = ET.Element("extensions")
+    ext1 = ET.Element("opencpn:viz")
+    ext1.text = "1"
+    ext.append(ext1)
+    ext2 = ET.Element("opencpn:viz_name")
+    ext2.text = "1"
+    ext.append(ext2)
+    pt.append(ext)
+    parent.append(pt)
 
-def writeRoute(rte):
-    global w
-    w.start("rte")
-    w.element("name", rte.name)
-    w.start("extensions")
-    w.element("opencpn:viz", "1")
-    w.end()
+def writeRoute(rte, parent):
+    rt = ET.Element("rte")
+    name = ET.Element("name")
+    name.text = rte.name
+    rt.append(name)
+    ext = ET.Element("extensions")
+    ext1 = ET.Element("opencpn:viz")
+    ext1.text = "1"
+    ext.append(ext1)
+    rt.append(ext)
     for wpt in rte.waypoints:
-        writeWaypoint(wpt)
-    w.end()
+        writeWaypoint(wpt, rt)
+    parent.append(rt)
 
 if len(sys.argv) !=3:
     print "Usage: python %s <FSHinput> <GPXoutput>" % sys.argv[0]
@@ -270,21 +290,19 @@ if len(sys.argv) !=3:
 print "Input:%s, output:%s" % (sys.argv[1], sys.argv[2])
 
 data = open(sys.argv[1], "rb").read()
+print "Read %d bytes " % len(data)
+
 pos = 0
 
-gpxfile = open(sys.argv[2], "w")
-w = XMLWriter(gpxfile,"utf-8")
-rootattrs=dict()
-rootattrs["version"]="1.1"
-rootattrs["creator"]="fsh2gpx"
-rootattrs["xmlns:xsi"]="http://www.w3.org/2001/XMLSchema-instance"
-rootattrs["xmlns"]="http://www.topografix.com/GPX/1/1"
-rootattrs["xmlns:gpxx"]="http://www.garmin.com/xmlschemas/GpxExtensions/v3"
-rootattrs["xsi:schemaLocation"]="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd"
-rootattrs["xmlns:opencpn"]="http://www.opencpn.org"
-gpx = w.start("gpx", rootattrs)
-
-print "Read %d bytes " % len(data)
+attrs={}
+attrs["version"]="1.1"
+attrs["creator"]="fsh2gpx"
+attrs["xmlns:xsi"]="http://www.w3.org/2001/XMLSchema-instance"
+attrs["xmlns"]="http://www.topografix.com/GPX/1/1"
+attrs["xmlns:gpxx"]="http://www.garmin.com/xmlschemas/GpxExtensions/v3"
+attrs["xsi:schemaLocation"]="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd"
+attrs["xmlns:opencpn"]="http://www.opencpn.org"
+gpx = ET.Element('gpx', attrib=attrs)
 
 readRL90hdr()
 readFLOBhdr()
@@ -294,34 +312,39 @@ block = 1
 waypoints = 0
 routes = 0
 while not done and pos < len(data):
-    print "=== parse block %d" % block
+    debug("=== parse block %d" % block)
     (entrysize, guid, type, unknown) = readBlockHeader()
-    print "ENTRY SIZE %d" % entrysize
-    print "POSS TYPE %s" % hex(type)
-    print "GUID %s" % guid
+    debug("ENTRY SIZE %d" % entrysize)
+    debug("POSS TYPE %s" % hex(type))
+    debug("GUID %s" % guid)
 
     if type == 0x01:
-        print "Waypoint"
-        writeWaypoint(readWaypoint())
+        debug( "Waypoint")
+        writeWaypoint(readWaypoint(), gpx)
         waypoints+=1
     elif type == 0x21 or type == 0x22:
-        print "Route"
-        writeRoute(readRoute(type))
+        debug("Route")
+        writeRoute(readRoute(type), gpx)
         routes+=1
     elif entrysize == 0xffff:
-        print "End of output reached"
+        debug("End of output reached")
         done = True
     else:
-        print "Skipping unknown type %s" % hex(type)
+        debug("Skipping unknown type %s" % hex(type))
 
     # Pad byte, usually 0xcd
     if pos % 2 != 0:
         getAsByte()
 
-    print "==="
-    print "pos is %d - %s" % (pos, hex(pos))
+    debug("===")
+    debug("pos is %d - %s" % (pos, hex(pos)))
     block+=1
 
 print "Read %d waypoints and %d routes" % (waypoints, routes)
+output = ET.ElementTree(element=gpx)
+raw = ET.tostring(gpx, 'utf-8')
+reparsed = minidom.parseString(raw)
+outf = open(sys.argv[2], "w")
+outf.write(reparsed.toprettyxml(indent="    ", encoding='utf-8'))
+outf.close()
 
-w.close(gpx)
