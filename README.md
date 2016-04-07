@@ -8,6 +8,7 @@ This script is for converting waypoints, routes, and tracks from Raymarine chart
 Current state of development
 ----------------------------
 
+* DEAD. See below!
 * Minimal waypoint and route parsing and GPX export works
 * Tracks are not yet supported
 * Many attributes have not yet been decoded
@@ -39,12 +40,20 @@ I'm decoding the FSH format in a fairly brute-force manner - hours and hours of 
 Future plans
 ------------
 
+In a word: NONE! This project is dead, use parsefsh... :-)
+
+Many additional reverse engineering details are worked out in https://github.com/rahra/parsefsh - some of my initial work was used in that project as well, which is great, though not directly attributed, see https://www.cypherpunk.at/2013/05/archive-fsh-reverse-engineered/ Bernhard Fischer figured out pretty much the rest of the format, including track logs, and parsefsh generates output that OpenCPN can use. Hopefully parsefsh makes it way into gpsbabel at some point, until then - use parsefsh!
+
+Documentation on the FSH format: http://wiki.openstreetmap.org/wiki/ARCHIVE.FSH
+
+
 Once the FSH format has been fully decoded, it would be reasonable to convert this to a GPS Babel filter. Once the project is to this stage, this fsh2gpx python script will be deprecated.
 
 If you are interested in helping out, feel free to dig in!
 
 License
 -------
+
 fsh2gpx is distributed as free, open source software under the GNU General Public License 3.0. See LICENSE for the complete license text.
 
 Project website
